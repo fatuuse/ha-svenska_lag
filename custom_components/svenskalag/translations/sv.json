@@ -1,1 +1,84 @@
-
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koppla Svenskalag",
+        "description": "Välj hur du vill logga in.",
+        "menu_options": {
+          "credentials": "Användarnamn och lösenord",
+          "token": "Personnyckel (API)"
+        }
+      },
+      "credentials": {
+        "title": "Logga in med användarnamn och lösenord",
+        "description": "Ange lagsidans adress, till exempel www.exempel.se, och lagets slug från lagets webbadress, till exempel exempel-lag-f2014.",
+        "data": {
+          "domain": "Sajtens domän",
+          "team_slug": "Lagets slug",
+          "username": "Användarnamn",
+          "password": "Lösenord"
+        }
+      },
+      "token": {
+        "title": "Koppla med personnyckel",
+        "description": "Skapa en personnyckel under \"Kopplingar till andra tjänster\" i Svenskalag och klistra in den nedan. Den börjar med slc_.",
+        "data": {
+          "token": "Personnyckel"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Autentisera Svenskalag igen",
+        "description": "Svenskalag godkänner inte längre den sparade inloggningen. Ange aktuella uppgifter.",
+        "data": {
+          "token": "Ny personnyckel",
+          "password": "Lösenord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Inloggningen godkändes inte.",
+      "cannot_connect": "Kunde inte nå Svenskalag. Försök igen senare."
+    },
+    "abort": {
+      "already_configured": "Den här inloggningen är redan konfigurerad.",
+      "reauth_successful": "Autentiseringen lyckades."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_activity": {
+        "name": "Nästa aktivitet"
+      },
+      "next_training_attendance": {
+        "name": "Anmälda nästa träning"
+      },
+      "next_match_attendance": {
+        "name": "Anmälda nästa match"
+      },
+      "upcoming_count": {
+        "name": "Kommande aktiviteter"
+      }
+    },
+    "binary_sensor": {
+      "needs_reply": {
+        "name": "Svar krävs"
+      }
+    },
+    "calendar": {
+      "activities": {
+        "name": "Aktiviteter"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Uppdateringsfrekvens",
+        "description": "Timmar mellan uppdateringar. Under en aktivitet hämtas data var femte minut, från en timme före start till 30 minuter efter slut.",
+        "data": {
+          "update_hours": "Timmar mellan uppdateringar (standard 12)"
+        }
+      }
+    }
+  }
+}
