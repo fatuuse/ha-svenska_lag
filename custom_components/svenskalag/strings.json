@@ -1,0 +1,84 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Svenskalag",
+        "description": "Choose how to log in.",
+        "menu_options": {
+          "credentials": "Username and password",
+          "token": "Person key (API)"
+        }
+      },
+      "credentials": {
+        "title": "Log in with username and password",
+        "description": "Enter the team site address, for example www.example.se, and the team slug from the team's URL, for example example-team-f2014.",
+        "data": {
+          "domain": "Site domain",
+          "team_slug": "Team slug",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "token": {
+        "title": "Connect with person key",
+        "description": "Create a person key under \"Kopplingar till andra tjänster\" in Svenskalag and paste it below. It starts with slc_.",
+        "data": {
+          "token": "Person key"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Svenskalag",
+        "description": "Svenskalag no longer accepts the saved login. Enter the current details.",
+        "data": {
+          "token": "New person key",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The login was rejected.",
+      "cannot_connect": "Could not reach Svenskalag. Try again later."
+    },
+    "abort": {
+      "already_configured": "This login is already configured.",
+      "reauth_successful": "Re-authentication successful."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_activity": {
+        "name": "Next activity"
+      },
+      "next_training_attendance": {
+        "name": "Attending next training"
+      },
+      "next_match_attendance": {
+        "name": "Attending next match"
+      },
+      "upcoming_count": {
+        "name": "Upcoming activities"
+      }
+    },
+    "binary_sensor": {
+      "needs_reply": {
+        "name": "Reply needed"
+      }
+    },
+    "calendar": {
+      "activities": {
+        "name": "Activities"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update frequency",
+        "description": "Hours between updates. Updates run every 5 minutes around an activity, from one hour before the start until 30 minutes after the end.",
+        "data": {
+          "update_hours": "Hours between updates (default 12)"
+        }
+      }
+    }
+  }
+}
