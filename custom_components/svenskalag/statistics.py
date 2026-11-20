@@ -10,6 +10,7 @@ built-in database. No external database is used.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -23,6 +24,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 # (statistic suffix, activity key, display name)
 _SERIES = (
@@ -58,15 +61,17 @@ def _rows(activities: list[dict[str, Any]], key: str) -> list[StatisticData]:
 
 
 def async_import_activity_stats(
-    hass: HomeAssistant, entry_id: str, activities: list[dict[str, Any]]
+    hass: HomeAssistant, stats_key: str, activities: list[dict[str, Any]]
 ) -> None:
     """Write the current values for all started activities."""
     for suffix, key, name in _SERIES:
         rows = _rows(activities, key)
         if not rows:
+            _LOGGER.debug("No %s values to write yet", suffix)
             continue
+        _LOGGER.debug("Writing %d %s rows to statistics", len(rows), suffix)
         async_add_external_statistics(
             hass,
-            _metadata(f"{DOMAIN}:{suffix}_{entry_id}", name),
+            _metadata(f"{DOMAIN}:{suffix}_{stats_key}", name),
             rows,
         )

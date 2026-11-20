@@ -18,8 +18,11 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([NeedsReplyBinarySensor(entry.runtime_data)])
-
+    for subentry_id, coordinator in entry.runtime_data.items():
+        async_add_entities(
+            [NeedsReplyBinarySensor(coordinator)],
+            config_subentry_id=subentry_id or None,
+        )
 
 class NeedsReplyBinarySensor(SvenskalagEntity, BinarySensorEntity):
     """On when there are invitations without a reply before the deadline."""

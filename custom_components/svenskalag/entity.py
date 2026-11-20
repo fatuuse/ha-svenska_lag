@@ -12,17 +12,17 @@ from .coordinator import SvenskalagCoordinator
 
 
 class SvenskalagEntity(CoordinatorEntity[SvenskalagCoordinator]):
-    """Base entity: one device per config entry (= one person)."""
+    """Base entity: one device per team, or one per person key login."""
 
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: SvenskalagCoordinator, key: str) -> None:
         super().__init__(coordinator)
-        entry_id = coordinator.config_entry.entry_id
-        self._attr_unique_id = f"{entry_id}_{key}"
+        self._attr_unique_id = f"{coordinator.stats_key}_{key}"
+        team = coordinator.team_slug or coordinator.data.person_name
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=f"Svenskalag {coordinator.data.person_name}",
+            identifiers={(DOMAIN, coordinator.stats_key)},
+            name=f"Svenskalag {team}",
             manufacturer="Svenskalag",
             entry_type=DeviceEntryType.SERVICE,
         )

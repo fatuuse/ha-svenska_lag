@@ -1,4 +1,9 @@
-"""Config flow for Svenskalag. Supports person key or username and password."""
+"""Config flow for Svenskalag.
+
+A username and password login is one entry. Teams are added as subentries,
+so the teams appear grouped under the login in Home Assistant.
+Person key (API) logins are single entries without teams.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,14 @@ from typing import Any
 
 import aiohttp
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    ConfigSubentryFlow,
+    OptionsFlow,
+    SubentryFlowResult,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
@@ -21,6 +33,7 @@ from .const import (
     CONF_USERNAME,
     DEFAULT_UPDATE_HOURS,
     DOMAIN,
+    SUBENTRY_TYPE_TEAM,
 )
 from .web_client import SvenskalagWebClient
 
@@ -29,11 +42,12 @@ STEP_TOKEN_SCHEMA = vol.Schema({vol.Required(CONF_TOKEN): str})
 STEP_CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DOMAIN): str,
-        vol.Required(CONF_TEAM_SLUG): str,
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): str,
     }
 )
+
+STEP_TEAM_SCHEMA = vol.Schema({vol.Required(CONF_TEAM_SLUG): str})
 
 STEP_PASSWORD_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
 
@@ -46,16 +60,39 @@ def _clean_domain(value: str) -> str:
     return value.strip("/")
 
 
+def _clean_slug(value: str) -> str:
+    return value.strip().strip("/")
+
+
 def _person_name(raw: dict[str, Any]) -> str:
     person = raw.get("person") or {}
     name = " ".join(p for p in (person.get("firstName"), person.get("lastName")) if p)
     return name.strip() or "Okänd"
 
 
+async def _async_check_login(
+    domain: str, team: str, username: str, password: str
+) -> None:
+    """Log in to one team's site. Raises SvenskalagAuthError or SvenskalagError."""
+    session = aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar())
+    try:
+        client = SvenskalagWebClient(session, domain, team, username, password)
+        await client.async_login()
+    finally:
+        await session.close()
+
+
 class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Svenskalag."""
 
     VERSION = 1
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        return {SUBENTRY_TYPE_TEAM: SvenskalagTeamSubentryFlow}
 
     @staticmethod
     @callback
@@ -64,6 +101,23 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(step_id="user", menu_options=["credentials", "token"])
+
+    async def async_step_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Save the login. Teams are added afterwards, and each one is checked then."""
+        if user_input is not None:
+            domain = _clean_domain(user_input[CONF_DOMAIN])
+            username = user_input[CONF_USERNAME].strip()
+            await self.async_set_unique_id(f"{domain}/{username}".lower())
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title=f"Svenskalag – {username}",
+                data={
+                    CONF_DOMAIN: domain,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                },
+            )
+        return self.async_show_form(step_id="credentials", data_schema=STEP_CREDENTIALS_SCHEMA)
 
     async def async_step_token(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -76,40 +130,13 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
             except SvenskalagError:
                 errors["base"] = "cannot_connect"
             else:
-                return await self._async_create(
+                await self.async_set_unique_id(name.lower())
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
                     title=f"Svenskalag – {name}",
-                    unique_id=name.lower(),
                     data={CONF_TOKEN: token},
                 )
         return self.async_show_form(step_id="token", data_schema=STEP_TOKEN_SCHEMA, errors=errors)
-
-    async def async_step_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            domain = _clean_domain(user_input[CONF_DOMAIN])
-            team = user_input[CONF_TEAM_SLUG].strip().strip("/")
-            username = user_input[CONF_USERNAME].strip()
-            password = user_input[CONF_PASSWORD]
-            try:
-                await self._async_validate_credentials(domain, team, username, password)
-            except SvenskalagAuthError:
-                errors["base"] = "invalid_auth"
-            except SvenskalagError:
-                errors["base"] = "cannot_connect"
-            else:
-                return await self._async_create(
-                    title=f"Svenskalag – {username} ({team})",
-                    unique_id=f"{domain}/{team}/{username}".lower(),
-                    data={
-                        CONF_DOMAIN: domain,
-                        CONF_TEAM_SLUG: team,
-                        CONF_USERNAME: username,
-                        CONF_PASSWORD: password,
-                    },
-                )
-        return self.async_show_form(
-            step_id="credentials", data_schema=STEP_CREDENTIALS_SCHEMA, errors=errors
-        )
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()
@@ -128,12 +155,14 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
                     await self._async_validate_token(new_data[CONF_TOKEN])
                 else:
                     password = user_input[CONF_PASSWORD]
-                    await self._async_validate_credentials(
-                        entry.data[CONF_DOMAIN],
-                        entry.data[CONF_TEAM_SLUG],
-                        entry.data[CONF_USERNAME],
-                        password,
+                    # Check against one team, if the login has any.
+                    team = next(
+                        (sub.data[CONF_TEAM_SLUG] for sub in entry.subentries.values()), None
                     )
+                    if team:
+                        await _async_check_login(
+                            entry.data[CONF_DOMAIN], team, entry.data[CONF_USERNAME], password
+                        )
                     new_data = {CONF_PASSWORD: password}
             except SvenskalagAuthError:
                 errors["base"] = "invalid_auth"
@@ -151,26 +180,49 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
     def _get_reauth_entry(self) -> ConfigEntry:
         return self.hass.config_entries.async_get_entry(self.context["entry_id"])
 
-    async def _async_create(self, title: str, unique_id: str, data: dict[str, Any]) -> ConfigFlowResult:
-        await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(title=title, data=data)
-
     async def _async_validate_token(self, token: str) -> str:
         api = SvenskalagApi(async_get_clientsession(self.hass), token)
         today = dt_util.now().date()
         raw = await api.async_get_my_activities(today, today)
         return _person_name(raw)
 
-    async def _async_validate_credentials(
-        self, domain: str, team: str, username: str, password: str
-    ) -> None:
-        session = aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar())
-        try:
-            client = SvenskalagWebClient(session, domain, team, username, password)
-            await client.async_login()
-        finally:
-            await session.close()
+
+class SvenskalagTeamSubentryFlow(ConfigSubentryFlow):
+    """Add one team under an existing username login."""
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        entry = self._get_entry()
+
+        # Only username logins have teams. Person key logins do not.
+        if CONF_USERNAME not in entry.data:
+            return self.async_abort(reason="not_supported")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            team = _clean_slug(user_input[CONF_TEAM_SLUG])
+            if any(sub.unique_id == team for sub in entry.subentries.values()):
+                return self.async_abort(reason="already_configured")
+            try:
+                await _async_check_login(
+                    entry.data[CONF_DOMAIN],
+                    team,
+                    entry.data[CONF_USERNAME],
+                    entry.data[CONF_PASSWORD],
+                )
+            except SvenskalagAuthError:
+                errors["base"] = "invalid_auth"
+            except SvenskalagError:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_create_entry(
+                    title=team,
+                    data={CONF_TEAM_SLUG: team},
+                    unique_id=team,
+                )
+
+        return self.async_show_form(
+            step_id="user", data_schema=STEP_TEAM_SCHEMA, errors=errors
+        )
 
 
 class SvenskalagOptionsFlow(OptionsFlow):

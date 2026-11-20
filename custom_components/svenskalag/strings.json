@@ -11,10 +11,9 @@
       },
       "credentials": {
         "title": "Log in with username and password",
-        "description": "Enter the team site address, for example www.example.se, and the team slug from the team's URL, for example example-team-f2014.",
+        "description": "Enter the site address, for example www.example.se. Add teams afterwards, under the integration's settings.",
         "data": {
           "domain": "Site domain",
-          "team_slug": "Team slug",
           "username": "Username",
           "password": "Password"
         }
@@ -44,29 +43,28 @@
       "reauth_successful": "Re-authentication successful."
     }
   },
-  "entity": {
-    "sensor": {
-      "next_activity": {
-        "name": "Next activity"
+  "config_subentries": {
+    "team": {
+      "entry_type": "Team",
+      "initiate_flow": {
+        "user": "Add team"
       },
-      "next_training_attendance": {
-        "name": "Attending next training"
+      "step": {
+        "user": {
+          "title": "Add team",
+          "description": "Enter the team's slug from its address, for example ingaroif-innebandy-innebandyp2015.",
+          "data": {
+            "team_slug": "Team slug"
+          }
+        }
       },
-      "next_match_attendance": {
-        "name": "Attending next match"
+      "error": {
+        "invalid_auth": "The login was rejected for this team.",
+        "cannot_connect": "Could not reach the team's site. Try again later."
       },
-      "upcoming_count": {
-        "name": "Upcoming activities"
-      }
-    },
-    "binary_sensor": {
-      "needs_reply": {
-        "name": "Reply needed"
-      }
-    },
-    "calendar": {
-      "activities": {
-        "name": "Activities"
+      "abort": {
+        "already_configured": "This team is already added.",
+        "not_supported": "Teams can only be added to a username and password login."
       }
     }
   },
@@ -79,6 +77,20 @@
           "update_hours": "Hours between updates (default 12)"
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_activity": {"name": "Next activity"},
+      "upcoming_count": {"name": "Upcoming activities"},
+      "next_training_attendance": {"name": "Attending next training"},
+      "next_match_attendance": {"name": "Attending next match"}
+    },
+    "binary_sensor": {
+      "needs_reply": {"name": "Reply needed"}
+    },
+    "calendar": {
+      "activities": {"name": "Activities"}
     }
   }
 }

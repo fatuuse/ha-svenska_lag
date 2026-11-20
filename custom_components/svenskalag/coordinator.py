@@ -79,7 +79,14 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, api: Any) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        api: Any,
+        subentry_id: str | None,
+        team_slug: str | None,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -88,6 +95,10 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
             update_interval=timedelta(hours=self._configured_hours(entry)),
         )
         self.api = api
+        self.subentry_id = subentry_id
+        self.team_slug = team_slug
+        # Keys statistics and entity ids. Person key logins have no subentry.
+        self.stats_key = subentry_id or entry.entry_id
 
     @staticmethod
     def _configured_hours(entry: ConfigEntry) -> int:
@@ -118,9 +129,13 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
 
         data = self._process(raw)
         self.update_interval = self._next_interval(data.activities)
+        _LOGGER.debug(
+            "Update done: %d activities, %d upcoming, %d need reply, next update in %s",
+            len(data.activities), data.upcoming_count, len(data.needs_reply), self.update_interval,
+        )
 
         try:
-            async_import_activity_stats(self.hass, self.config_entry.entry_id, data.activities)
+            async_import_activity_stats(self.hass, self.stats_key, data.activities)
         except Exception:  # noqa: BLE001 - statistics must not break sensors
             _LOGGER.exception("Could not write statistics")
         return data

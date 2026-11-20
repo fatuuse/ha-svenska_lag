@@ -15,6 +15,9 @@ CONF_PASSWORD = "password"
 
 # Options
 CONF_UPDATE_HOURS = "update_hours"
+
+# Subentry type for one team under a username login
+SUBENTRY_TYPE_TEAM = "team"
 DEFAULT_UPDATE_HOURS = 12  # twice a day
 
 # Faster polling around activities

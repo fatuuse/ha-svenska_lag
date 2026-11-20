@@ -20,7 +20,11 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([SvenskalagCalendar(entry.runtime_data)])
+    for subentry_id, coordinator in entry.runtime_data.items():
+        async_add_entities(
+            [SvenskalagCalendar(coordinator)],
+            config_subentry_id=subentry_id or None,
+        )
 
 
 def _to_event(activity: dict[str, Any]) -> CalendarEvent:

@@ -23,16 +23,16 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
-    async_add_entities(
-        [
-            NextActivitySensor(coordinator),
-            UpcomingCountSensor(coordinator),
-            NextAttendanceSensor(coordinator, "next_training_attendance", lambda d: d.next_training),
-            NextAttendanceSensor(coordinator, "next_match_attendance", lambda d: d.next_match),
-        ]
-    )
-
+    for subentry_id, coordinator in entry.runtime_data.items():
+        async_add_entities(
+            [
+                NextActivitySensor(coordinator),
+                UpcomingCountSensor(coordinator),
+                NextAttendanceSensor(coordinator, "next_training_attendance", lambda d: d.next_training),
+                NextAttendanceSensor(coordinator, "next_match_attendance", lambda d: d.next_match),
+            ],
+            config_subentry_id=subentry_id or None,
+        )
 
 class NextActivitySensor(SvenskalagEntity, SensorEntity):
     """Timestamp of the next activity, with details as attributes."""

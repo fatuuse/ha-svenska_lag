@@ -15,14 +15,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
-import calmjs.parse
-from calmjs.parse.unparsers.extractor import ast_to_dict
 from homeassistant.util import dt as dt_util
 
 from .api import SvenskalagAuthError, SvenskalagError
@@ -78,6 +77,17 @@ class _PageParser(HTMLParser):
         if tag in self._stack:
             idx = len(self._stack) - 1 - self._stack[::-1].index(tag)
             del self._stack[idx:]
+
+
+def _is_own_activity_link(url: str, team_slug: str) -> bool:
+    """True only for links to this team's own activities.
+
+    Calendar pages also link to other teams (opponents, shared events). Those
+    links have other team slugs as their first path segment, so they are
+    rejected here. An activity link must also end with a numeric id.
+    """
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    return len(parts) >= 2 and parts[0] == team_slug and parts[-1].isdigit()
 
 
 def _to_aware_iso(value: Any, tz) -> str | None:
@@ -177,31 +187,123 @@ def _map_schedule(
     }
 
 
-def _parse_attending_count(html: str) -> tuple[int | None, list[str]]:
-    """Return (number attending, initData keys) from the presence page.
+_ATTENDING_MEMBERS_RE = re.compile(
+    r"""["']?attendingMembers["']?\s*[:=]\s*\[""",
+    re.IGNORECASE,
+)
 
-    NOT VERIFIED against a real presence page yet. The data is read from a
-    head <script> as initData, and attendingMembers is assumed to be the list
-    of people who answered yes.
+
+def _find_matching_bracket(text: str, start: int, opening: str = "[", closing: str = "]") -> int | None:
+    """Return the index of the bracket that closes the one at `start`, or None."""
+    depth = 0
+    quote: str | None = None
+    escaped = False
+
+    for index in range(start, len(text)):
+        char = text[index]
+
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote is not None:
+            escaped = True
+            continue
+        if char in ("'", '"'):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            continue
+        if quote is not None:
+            continue
+
+        if char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+
+    return None
+
+
+def _count_top_level_entries(text: str) -> int:
+    """Count entries in an array body. Commas inside nested [] or {} are ignored.
+
+    A trailing comma does not add an entry.
+    """
+    if not text.strip():
+        return 0
+
+    count = 1
+    bracket_depth = 0
+    brace_depth = 0
+    quote: str | None = None
+    escaped = False
+    last_significant = ""
+
+    for char in text:
+        if escaped:
+            escaped = False
+            last_significant = char
+            continue
+        if char == "\\" and quote is not None:
+            escaped = True
+            continue
+        if char in ("'", '"'):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            last_significant = char
+            continue
+        if quote is not None:
+            continue
+
+        if char == "[":
+            bracket_depth += 1
+        elif char == "]":
+            bracket_depth -= 1
+        elif char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth -= 1
+        elif char == "," and bracket_depth == 0 and brace_depth == 0:
+            count += 1
+
+        if not char.isspace():
+            last_significant = char
+
+    if last_significant == "," and bracket_depth == 0 and brace_depth == 0:
+        count -= 1
+    return count
+
+
+def _parse_attending_count(html: str) -> tuple[int | None, list[str]]:
+    """Return (number attending, found keys) from the presence page.
+
+    Looks for the attendingMembers array in the head scripts and counts its
+    top-level entries. This is not a JavaScript parser. Returns (None, []) if
+    the field is missing, and (None, [...]) if the array is incomplete.
     """
     head = html.split("</head>", 1)[0]
-    for match in _SCRIPT_RE.finditer(head):
-        text = match.group(1).strip()
-        if not text:
-            continue
-        try:
-            program = ast_to_dict(calmjs.parse.es5(text))
-        except Exception:  # noqa: BLE001 - other scripts may not parse
-            continue
-        if isinstance(program, dict) and "initData" in program:
-            data = program["initData"]
-            if not isinstance(data, dict):
-                return None, []
-            attending = data.get("attendingMembers")
-            count = len(attending) if isinstance(attending, list) else None
-            return count, sorted(data.keys())
-    return None, []
 
+    for match in _SCRIPT_RE.finditer(head):
+        script = match.group(1)
+        member_match = _ATTENDING_MEMBERS_RE.search(script)
+        if not member_match:
+            continue
+
+        # The match ends just after the opening bracket.
+        array_start = member_match.end() - 1
+        array_end = _find_matching_bracket(script, array_start)
+        if array_end is None:
+            return None, ["attendingMembers"]
+
+        array_content = script[array_start + 1:array_end]
+        return _count_top_level_entries(array_content), ["attendingMembers"]
+
+    return None, []
 
 class SvenskalagWebClient:
     """Logs in with username and password and reads the team pages."""
@@ -230,6 +332,8 @@ class SvenskalagWebClient:
     async def _fetch(self, url: str, post_data: dict[str, str] | None = None) -> tuple[str, str]:
         """Return (final_url, body). Raises SvenskalagError on failure."""
         timeout = aiohttp.ClientTimeout(total=30)
+        method = "GET" if post_data is None else "POST"
+        started = time.monotonic()
         try:
             request = (
                 self._session.get(url, timeout=timeout)
@@ -238,6 +342,11 @@ class SvenskalagWebClient:
             )
             async with request as resp:
                 text = await resp.text()
+                _LOGGER.debug(
+                    "%s %s -> %s, %d bytes, %.0f ms",
+                    method, url, resp.status, len(text),
+                    (time.monotonic() - started) * 1000,
+                )
                 if resp.status >= 400:
                     raise SvenskalagError(f"HTTP {resp.status} from {url}")
                 return str(resp.url), text
@@ -269,6 +378,7 @@ class SvenskalagWebClient:
         if not self._is_authenticated(final_url, html):
             raise SvenskalagAuthError("Login was not accepted by the site")
         self._logged_in = True
+        _LOGGER.debug("Login accepted for team %s on %s", self._team_slug, self._domain)
 
     async def _fetch_month_links(self, year: int, month: int) -> list[str]:
         url = self._month_url(year, month)
@@ -283,7 +393,12 @@ class SvenskalagWebClient:
         parser = _PageParser()
         parser.feed(html)
         links = {urljoin(final_url, href) for href in parser.activity_hrefs}
-        return sorted(link for link in links if f"/{self._team_slug}/" in link)
+        own = [link for link in links if _is_own_activity_link(link, self._team_slug)]
+        _LOGGER.debug(
+            "Month %d-%02d: %d links, %d for this team",
+            year, month, len(links), len(own),
+        )
+        return sorted(own)
 
     async def _async_attending_count(self, activity_id: int) -> int | None:
         url = self._url(f"controlpanel/presence/chooseparticipants/{activity_id}")
@@ -293,6 +408,7 @@ class SvenskalagWebClient:
             _LOGGER.warning("Could not read attendance for activity %s: %s", activity_id, err)
             return None
         count, keys = _parse_attending_count(html)
+        _LOGGER.debug("Attendance for activity %s: %s (initData keys: %s)", activity_id, count, keys)
         if count is None:
             _LOGGER.warning(
                 "No attendingMembers for activity %s. initData keys found: %s",
@@ -312,6 +428,8 @@ class SvenskalagWebClient:
         for year, month in _months_in_window(today):
             urls.update(await self._fetch_month_links(year, month))
 
+        _LOGGER.debug("Calendar links found across %d months: %d", len(_months_in_window(today)), len(urls))
+
         # One series page covers every occurrence in its series, so skip links
         # whose id has already been seen as an occurrence.
         seen_ids: set[int] = set()
@@ -319,6 +437,7 @@ class SvenskalagWebClient:
         for url in sorted(urls):
             activity_id = [part for part in url.split("/") if part][-1]
             if activity_id.isdigit() and int(activity_id) in seen_ids:
+                _LOGGER.debug("Activity %s already covered by a series page", activity_id)
                 continue
 
             is_game = "/match/" in url
@@ -330,6 +449,7 @@ class SvenskalagWebClient:
             try:
                 _, page = await self._fetch(edit_url)
                 series, schedules = _parse_activity_page(page)
+                _LOGGER.debug("Activity %s: %d occurrences in series", activity_id, len(schedules))
             except SvenskalagError as err:
                 _LOGGER.warning("Skipping activity %s: %s", activity_id, err)
                 continue
@@ -351,6 +471,9 @@ class SvenskalagWebClient:
                 continue
             activity["attendingCount"] = await self._async_attending_count(activity["id"])
 
+        _LOGGER.debug(
+            "Fetched %d activities in range %s to %s", len(activities), start, end,
+        )
         return {
             "person": {"firstName": self._username, "lastName": ""},
             "activities": activities,
