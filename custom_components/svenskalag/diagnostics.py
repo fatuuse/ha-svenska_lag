@@ -22,6 +22,7 @@ def _team_diagnostics(coordinator) -> dict[str, Any]:
     data = coordinator.data
     return {
         "team": coordinator.team_slug,
+        "web_report": getattr(coordinator.api, "last_report", None),
         "subentry_id": coordinator.subentry_id,
         "last_update_success": coordinator.last_update_success,
         "update_interval": str(coordinator.update_interval),

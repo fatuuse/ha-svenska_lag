@@ -21,6 +21,9 @@ class SvenskalagAuthError(SvenskalagError):
 class SvenskalagApi:
     """Wraps the endpoints we need."""
 
+    # Personal replies and invitations are only available with a person key.
+    supports_replies = True
+
     def __init__(self, session: aiohttp.ClientSession, token: str) -> None:
         self._session = session
         self._token = token
@@ -31,6 +34,10 @@ class SvenskalagApi:
             "/me/activities",
             params={"from": start.isoformat(), "to": end.isoformat()},
         )
+
+    async def async_get_membership_periods(self) -> dict[str, Any]:
+        """Return membership periods. Requires a person key."""
+        return await self._get("/settings/membership-periods")
 
     async def _get(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self._token}"}

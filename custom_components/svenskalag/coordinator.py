@@ -23,6 +23,7 @@ from .const import (
     DEFAULT_UPDATE_HOURS,
     DOMAIN,
 )
+from .membership import card_valid_until, current_period, parse_iso
 from .statistics import async_import_activity_stats
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,9 @@ class SvenskalagData:
     next_match: dict[str, Any] | None = None
     upcoming_count: int = 0
     needs_reply: list[dict[str, Any]] = field(default_factory=list)
+    membership_period_name: str | None = None
+    membership_period_end: datetime | None = None
+    card_valid_until: datetime | None = None
 
 
 def _parse(value: str | None) -> datetime | None:
@@ -68,6 +72,10 @@ def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
         "replied_at": _parse(reply.get("repliedAt")),
         "invited_at": _parse(invitation.get("invitedAt")),
         "recipients": invitation.get("recipients"),
+        "invitation_message": invitation.get("message"),
+        "type_id": raw.get("typeId"),
+        "team_id": raw.get("teamId"),
+        "reply_comment": reply.get("comment"),
         "reply_url": invitation.get("replyUrl"),
         "web_url": raw.get("webUrl"),
         "attending_count": raw.get("attendingCount"),
@@ -128,6 +136,11 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
             raise UpdateFailed(str(err)) from err
 
         data = self._process(raw)
+        (
+            data.membership_period_name,
+            data.membership_period_end,
+            data.card_valid_until,
+        ) = await self._async_fetch_membership()
         self.update_interval = self._next_interval(data.activities)
         _LOGGER.debug(
             "Update done: %d activities, %d upcoming, %d need reply, next update in %s",
@@ -139,6 +152,29 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
         except Exception:  # noqa: BLE001 - statistics must not break sensors
             _LOGGER.exception("Could not write statistics")
         return data
+
+    async def _async_fetch_membership(
+        self,
+    ) -> tuple[str | None, datetime | None, datetime | None]:
+        """Membership periods are only available with a person key. Other clients return nothing."""
+        fetch = getattr(self.api, "async_get_membership_periods", None)
+        if fetch is None:
+            return None, None, None
+        try:
+            raw = await fetch()
+        except SvenskalagError as err:
+            _LOGGER.warning("Could not read membership periods: %s", err)
+            return None, None, None
+        periods = raw.get("membershipPeriods") or []
+        now = dt_util.now()
+        period = current_period(periods, now)
+        if period is None:
+            return None, None, card_valid_until(periods, now)
+        return (
+            period.get("name"),
+            parse_iso(period.get("endDate")),
+            card_valid_until(periods, now),
+        )
 
     @staticmethod
     def _process(raw: dict[str, Any]) -> SvenskalagData:

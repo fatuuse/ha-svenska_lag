@@ -46,4 +46,8 @@ def activity_attributes(activity: dict[str, Any]) -> dict[str, Any]:
         "reply_deadline": activity["reply_deadline"].isoformat() if activity["reply_deadline"] else None,
         "reply_url": activity["reply_url"],
         "web_url": activity["web_url"],
+        "type_id": activity["type_id"],
+        "reply_comment": activity["reply_comment"],
+        "replied_at": activity["replied_at"].isoformat() if activity["replied_at"] else None,
+        "invitation_message": activity["invitation_message"],
     }
