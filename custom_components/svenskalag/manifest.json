@@ -1,7 +1,7 @@
 {
   "domain": "svenskalag",
   "name": "Svenskalag",
-  "codeowners": [],
+  "codeowners": [@fatuuse],
   "config_flow": true,
   "dependencies": [
     "recorder"
@@ -9,5 +9,6 @@
   "documentation": "https://github.com/fatuuse/ha-svenska_lag",
   "integration_type": "service",
   "iot_class": "cloud_polling",
+  "issues": "https://github.com/fatuuse/ha-svenska_lag/issues",
   "version": "0.1.8"
 }
