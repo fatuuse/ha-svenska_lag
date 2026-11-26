@@ -36,7 +36,7 @@ MONTHS_SV = (
 
 # eventTypeId values, taken from the activity edit form.
 EVENT_TYPES = {
-    1: "Träning", 5: "Tävling", 6: "Cup", 10: "Läger",
+    1: "Träning", 5: "Tävling", 6: "Cup", 7: "Match", 10: "Läger",
     2: "Möte", 8: "Utbildning", 9: "Arbetspass", 4: "Övrigt",
 }
 
@@ -80,14 +80,18 @@ class _PageParser(HTMLParser):
 
 
 def _is_own_activity_link(url: str, team_slug: str) -> bool:
-    """True only for links to this team's own activities.
+    """True for links to this team's activities.
 
-    Calendar pages also link to other teams (opponents, shared events). Those
-    links have other team slugs as their first path segment, so they are
-    rejected here. An activity link must also end with a numeric id.
+    Accepted: links under the team's own slug, and links without a team segment
+    (for example /kalender/redigera-aktivitet/<id>). Links under another team's
+    slug are rejected. Every accepted link must end with a numeric id.
     """
     parts = [part for part in urlparse(url).path.split("/") if part]
-    return len(parts) >= 2 and parts[0] == team_slug and parts[-1].isdigit()
+    if len(parts) < 2 or not parts[-1].isdigit():
+        return False
+    if parts[0] == team_slug:
+        return True
+    return parts[0] in ("kalender", "match")
 
 
 def _to_aware_iso(value: Any, tz) -> str | None:
@@ -118,6 +122,23 @@ def _months_in_window(today: date) -> list[tuple[int, int]]:
     return months
 
 
+def _single_occurrence(data: dict[str, Any]) -> dict[str, Any]:
+    """Turn a single-occurrence page (for example a match) into a schedule entry."""
+    day = data.get("scheduleDate")
+    start, end = data.get("startTime"), data.get("endTime")
+    return {
+        "id": data.get("scheduleId"),
+        "text": data.get("scheduleText"),
+        "scheduleDate": f"{day}T{start}:00" if day and start else day,
+        "scheduleToDate": f"{day}T{end}:00" if day and end else None,
+        "place": data.get("place"),
+        "recipients": None,
+        "firstInvite": None,
+        "secondInvite": None,
+        "message": None,
+    }
+
+
 def _parse_activity_page(html: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Return (series settings, schedules) from an activity edit page."""
     parser = _PageParser()
@@ -133,6 +154,9 @@ def _parse_activity_page(html: str) -> tuple[dict[str, Any], list[dict[str, Any]
     except ValueError as err:
         raise SvenskalagError(f"data-ng-init is not valid JSON: {err}") from err
     schedules = data.get("schedules")
+    if schedules is None and data.get("scheduleDate"):
+        # Matches have no schedules list. Their one occurrence is the page itself.
+        schedules = [_single_occurrence(data)]
     if not isinstance(schedules, list):
         raise SvenskalagError("data-ng-init has no schedules list")
     return data, schedules
@@ -161,6 +185,7 @@ def _map_schedule(
     return {
         "id": schedule.get("id"),
         "title": schedule.get("text") or series.get("scheduleText"),
+        "typeId": series.get("eventTypeId"),
         "typeName": EVENT_TYPES.get(series.get("eventTypeId")),
         "teamName": team_slug,
         "isGame": is_game,
@@ -181,6 +206,7 @@ def _map_schedule(
             "invitedAt": _to_aware_iso(schedule.get("firstInvite"), tz),
             "secondInviteAt": _to_aware_iso(schedule.get("secondInvite"), tz),
             "recipients": len(recipients) if isinstance(recipients, list) else None,
+            "message": schedule.get("message"),
         },
         # Filled in for upcoming activities from the presence page.
         "attendingCount": None,
@@ -308,6 +334,8 @@ def _parse_attending_count(html: str) -> tuple[int | None, list[str]]:
 class SvenskalagWebClient:
     """Logs in with username and password and reads the team pages."""
 
+    supports_replies = False
+
     def __init__(
         self,
         session: aiohttp.ClientSession,
@@ -322,6 +350,8 @@ class SvenskalagWebClient:
         self._username = username
         self._password = password
         self._logged_in = False
+        # Step-by-step report from the last update. Shown in diagnostics.
+        self.last_report: dict[str, Any] = {}
 
     def _url(self, path: str) -> str:
         return f"https://{self._domain}/{self._team_slug}/{path}"
@@ -380,11 +410,15 @@ class SvenskalagWebClient:
         self._logged_in = True
         _LOGGER.debug("Login accepted for team %s on %s", self._team_slug, self._domain)
 
-    async def _fetch_month_links(self, year: int, month: int) -> list[str]:
+    async def _fetch_month_links(
+        self, year: int, month: int, report: dict[str, Any]
+    ) -> list[str]:
         url = self._month_url(year, month)
         final_url, html = await self._fetch(url)
+        relogin = False
         if not self._is_authenticated(final_url, html):
             # The session may have expired. Log in once more and retry.
+            relogin = True
             await self.async_login()
             final_url, html = await self._fetch(url)
             if not self._is_authenticated(final_url, html):
@@ -394,10 +428,18 @@ class SvenskalagWebClient:
         parser.feed(html)
         links = {urljoin(final_url, href) for href in parser.activity_hrefs}
         own = [link for link in links if _is_own_activity_link(link, self._team_slug)]
-        _LOGGER.debug(
-            "Month %d-%02d: %d links, %d for this team",
-            year, month, len(links), len(own),
-        )
+        report["months"].append({
+            "month": f"{year}-{month:02d}",
+            "html_bytes": len(html),
+            "relogin": relogin,
+            "invisible_link_in_html": "invisible-link" in html,
+            "td_links": len(parser.activity_hrefs),
+            "links": len(links),
+            "own": len(own),
+            # Raw hrefs from the calendar, to see the link format. Contain no personal data.
+            "sample_hrefs": parser.activity_hrefs[:5],
+        })
+        _LOGGER.debug("Month %s sample hrefs: %s", f"{year}-{month:02d}", parser.activity_hrefs[:5])
         return sorted(own)
 
     async def _async_attending_count(self, activity_id: int) -> int | None:
@@ -406,9 +448,13 @@ class SvenskalagWebClient:
             _, html = await self._fetch(url)
         except SvenskalagError as err:
             _LOGGER.warning("Could not read attendance for activity %s: %s", activity_id, err)
+            self.last_report.setdefault("presence", []).append({"id": activity_id, "error": str(err)})
             return None
         count, keys = _parse_attending_count(html)
-        _LOGGER.debug("Attendance for activity %s: %s (initData keys: %s)", activity_id, count, keys)
+        self.last_report.setdefault("presence", []).append(
+            {"id": activity_id, "count": count, "keys": keys[:20]}
+        )
+        _LOGGER.debug("Attendance for activity %s: %s", activity_id, count)
         if count is None:
             _LOGGER.warning(
                 "No attendingMembers for activity %s. initData keys found: %s",
@@ -423,12 +469,21 @@ class SvenskalagWebClient:
 
         today = dt_util.now().date()
         tz = dt_util.get_default_time_zone()
+        report: dict[str, Any] = {
+            "started": dt_util.now().isoformat(),
+            "range": [start.isoformat(), end.isoformat()],
+            "months": [],
+            "links_total": 0,
+            "activity_pages": [],
+            "presence": [],
+            "dropped": {"no_start": 0, "out_of_range": 0},
+        }
+        self.last_report = report
 
         urls: set[str] = set()
         for year, month in _months_in_window(today):
-            urls.update(await self._fetch_month_links(year, month))
-
-        _LOGGER.debug("Calendar links found across %d months: %d", len(_months_in_window(today)), len(urls))
+            urls.update(await self._fetch_month_links(year, month, report))
+        report["links_total"] = len(urls)
 
         # One series page covers every occurrence in its series, so skip links
         # whose id has already been seen as an occurrence.
@@ -437,7 +492,7 @@ class SvenskalagWebClient:
         for url in sorted(urls):
             activity_id = [part for part in url.split("/") if part][-1]
             if activity_id.isdigit() and int(activity_id) in seen_ids:
-                _LOGGER.debug("Activity %s already covered by a series page", activity_id)
+                report["activity_pages"].append({"id": activity_id, "skipped": "covered_by_series"})
                 continue
 
             is_game = "/match/" in url
@@ -446,23 +501,29 @@ class SvenskalagWebClient:
                 if is_game
                 else self._url(f"kalender/redigera-aktivitet/{activity_id}")
             )
+            page_report: dict[str, Any] = {"id": activity_id, "is_game": is_game}
+            report["activity_pages"].append(page_report)
             try:
                 _, page = await self._fetch(edit_url)
                 series, schedules = _parse_activity_page(page)
-                _LOGGER.debug("Activity %s: %d occurrences in series", activity_id, len(schedules))
             except SvenskalagError as err:
+                page_report.update(ok=False, reason=str(err))
                 _LOGGER.warning("Skipping activity %s: %s", activity_id, err)
                 continue
 
+            page_report.update(ok=True, occurrences=len(schedules))
             for schedule in schedules:
                 if isinstance(schedule.get("id"), int):
                     seen_ids.add(schedule["id"])
                 mapped = _map_schedule(series, schedule, self._team_slug, is_game, url, tz)
                 if mapped is None:
+                    report["dropped"]["no_start"] += 1
                     continue
                 day = datetime.fromisoformat(mapped["startsAt"]).date()
                 if start <= day <= end:
                     activities.append(mapped)
+                else:
+                    report["dropped"]["out_of_range"] += 1
 
         # Attendance is only read for upcoming activities, to limit requests.
         now = dt_util.now()
@@ -471,6 +532,8 @@ class SvenskalagWebClient:
                 continue
             activity["attendingCount"] = await self._async_attending_count(activity["id"])
 
+        report["in_range"] = len(activities)
+        report["finished"] = dt_util.now().isoformat()
         _LOGGER.debug(
             "Fetched %d activities in range %s to %s", len(activities), start, end,
         )

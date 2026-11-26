@@ -86,6 +86,7 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Svenskalag."""
 
     VERSION = 1
+    _credentials: dict[str, str]
 
     @classmethod
     @callback
@@ -103,21 +104,48 @@ class SvenskalagConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(step_id="user", menu_options=["credentials", "token"])
 
     async def async_step_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Save the login. Teams are added afterwards, and each one is checked then."""
+        """First step: the login. The next step asks for the first team."""
         if user_input is not None:
             domain = _clean_domain(user_input[CONF_DOMAIN])
             username = user_input[CONF_USERNAME].strip()
             await self.async_set_unique_id(f"{domain}/{username}".lower())
             self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=f"Svenskalag – {username}",
-                data={
-                    CONF_DOMAIN: domain,
-                    CONF_USERNAME: username,
-                    CONF_PASSWORD: user_input[CONF_PASSWORD],
-                },
-            )
+            self._credentials = {
+                CONF_DOMAIN: domain,
+                CONF_USERNAME: username,
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            return await self.async_step_team()
         return self.async_show_form(step_id="credentials", data_schema=STEP_CREDENTIALS_SCHEMA)
+
+    async def async_step_team(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Second step: the first team. The login is checked against this team, and the entry is created with it."""
+        errors: dict[str, str] = {}
+        creds = self._credentials
+        if user_input is not None:
+            team = _clean_slug(user_input[CONF_TEAM_SLUG])
+            try:
+                await _async_check_login(
+                    creds[CONF_DOMAIN], team, creds[CONF_USERNAME], creds[CONF_PASSWORD]
+                )
+            except SvenskalagAuthError:
+                errors["base"] = "invalid_auth"
+            except SvenskalagError:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_create_entry(
+                    title=f"Svenskalag – {creds[CONF_USERNAME]}",
+                    data=creds,
+                    subentries=[
+                        {
+                            "subentry_type": SUBENTRY_TYPE_TEAM,
+                            "title": team,
+                            "unique_id": team,
+                            "data": {CONF_TEAM_SLUG: team},
+                        }
+                    ],
+                )
+        return self.async_show_form(step_id="team", data_schema=STEP_TEAM_SCHEMA, errors=errors)
 
     async def async_step_token(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}

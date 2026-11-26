@@ -11,7 +11,7 @@
       },
       "credentials": {
         "title": "Log in with username and password",
-        "description": "Enter the site address, for example www.example.se. Add teams afterwards, under the integration's settings.",
+        "description": "Enter the club's site address. Add teams afterwards, under the integration's settings.",
         "data": {
           "domain": "Site domain",
           "username": "Username",
@@ -31,6 +31,13 @@
         "data": {
           "token": "New person key",
           "password": "Password"
+        }
+      },
+      "team": {
+        "title": "Add first team",
+        "description": "Enter the team's slug from its address, for example ingaroif-innebandy-innebandyp2015. The login is checked against this team.",
+        "data": {
+          "team_slug": "Team slug"
         }
       }
     },
@@ -81,16 +88,49 @@
   },
   "entity": {
     "sensor": {
-      "next_activity": {"name": "Next activity"},
-      "upcoming_count": {"name": "Upcoming activities"},
-      "next_training_attendance": {"name": "Attending next training"},
-      "next_match_attendance": {"name": "Attending next match"}
+      "next_activity": {
+        "name": "Next activity"
+      },
+      "upcoming_count": {
+        "name": "Upcoming activities"
+      },
+      "next_training_attendance": {
+        "name": "Attending next training"
+      },
+      "next_match_attendance": {
+        "name": "Attending next match"
+      },
+      "membership_period_end": {
+        "name": "Membership period ends"
+      },
+      "card_valid_until": {
+        "name": "Membership card valid until"
+      },
+      "next_training_invited": {
+        "name": "Invited to next training"
+      },
+      "next_training_not_attending": {
+        "name": "Not yet attending next training"
+      },
+      "next_match_invited": {
+        "name": "Invited to next match"
+      },
+      "next_match_not_attending": {
+        "name": "Not yet attending next match"
+      },
+      "unanswered_invitations": {
+        "name": "Unanswered invitations"
+      }
     },
     "binary_sensor": {
-      "needs_reply": {"name": "Reply needed"}
+      "needs_reply": {
+        "name": "Reply needed"
+      }
     },
     "calendar": {
-      "activities": {"name": "Activities"}
+      "activities": {
+        "name": "Activities"
+      }
     }
   }
 }
