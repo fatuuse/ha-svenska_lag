@@ -1,6 +1,10 @@
 {
   "domain": "svenskalag",
   "name": "Svenskalag",
+  "categories": [
+    "productivity_information.calendars_todos",
+    "local_services"
+  ],
   "codeowners": [
     "@fatuuse"
   ],
@@ -12,5 +16,8 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/fatuuse/ha-svenska_lag/issues",
-  "version": "0.1.8"
+  "loggers": [
+    "custom_components.svenskalag"
+  ],
+  "version": "0.1.13"
 }

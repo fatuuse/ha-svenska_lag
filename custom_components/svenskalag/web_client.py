@@ -79,19 +79,20 @@ class _PageParser(HTMLParser):
             del self._stack[idx:]
 
 
-def _is_own_activity_link(url: str, team_slug: str) -> bool:
-    """True for links to this team's activities.
+def _activity_from_link(url: str, team_slug: str) -> tuple[str, bool] | None:
+    """Return (activity id, is_match) for this team's activity links, otherwise None.
 
-    Accepted: links under the team's own slug, and links without a team segment
-    (for example /kalender/redigera-aktivitet/<id>). Links under another team's
-    slug are rejected. Every accepted link must end with a numeric id.
+    Real links look like /<team>/aktivitet/<id>/<name> for trainings and
+    /<team>/match/<id>/<opponent> for matches. Links to other teams and other
+    pages (news, members) return None.
     """
     parts = [part for part in urlparse(url).path.split("/") if part]
-    if len(parts) < 2 or not parts[-1].isdigit():
-        return False
-    if parts[0] == team_slug:
-        return True
-    return parts[0] in ("kalender", "match")
+    if len(parts) < 3 or parts[0] != team_slug:
+        return None
+    kind, ident = parts[1], parts[2]
+    if kind not in ("aktivitet", "match") or not ident.isdigit():
+        return None
+    return ident, kind == "match"
 
 
 def _to_aware_iso(value: Any, tz) -> str | None:
@@ -427,7 +428,7 @@ class SvenskalagWebClient:
         parser = _PageParser()
         parser.feed(html)
         links = {urljoin(final_url, href) for href in parser.activity_hrefs}
-        own = [link for link in links if _is_own_activity_link(link, self._team_slug)]
+        own = [link for link in links if _activity_from_link(link, self._team_slug)]
         report["months"].append({
             "month": f"{year}-{month:02d}",
             "html_bytes": len(html),
@@ -490,12 +491,14 @@ class SvenskalagWebClient:
         seen_ids: set[int] = set()
         activities: list[dict[str, Any]] = []
         for url in sorted(urls):
-            activity_id = [part for part in url.split("/") if part][-1]
+            parsed = _activity_from_link(url, self._team_slug)
+            if parsed is None:
+                continue
+            activity_id, is_game = parsed
             if activity_id.isdigit() and int(activity_id) in seen_ids:
                 report["activity_pages"].append({"id": activity_id, "skipped": "covered_by_series"})
                 continue
 
-            is_game = "/match/" in url
             edit_url = (
                 self._url(f"match/redigera/{activity_id}")
                 if is_game
