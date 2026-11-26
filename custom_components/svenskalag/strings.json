@@ -131,6 +131,11 @@
       "activities": {
         "name": "Activities"
       }
+    },
+    "button": {
+      "refresh_data": {
+        "name": "Refresh data"
+      }
     }
   }
 }

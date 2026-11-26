@@ -23,6 +23,7 @@ from .web_client import SvenskalagWebClient
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CALENDAR,
 ]
 
