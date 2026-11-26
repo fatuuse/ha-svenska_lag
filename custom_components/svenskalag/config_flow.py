@@ -55,8 +55,7 @@ STEP_PASSWORD_SCHEMA = vol.Schema({vol.Required(CONF_PASSWORD): str})
 def _clean_domain(value: str) -> str:
     value = value.strip()
     for prefix in ("https://", "http://"):
-        if value.startswith(prefix):
-            value = value[len(prefix):]
+        value = value.removeprefix(prefix)
     return value.strip("/")
 
 

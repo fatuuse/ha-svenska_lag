@@ -149,7 +149,7 @@ class SvenskalagCoordinator(DataUpdateCoordinator[SvenskalagData]):
 
         try:
             async_import_activity_stats(self.hass, self.stats_key, data.activities)
-        except Exception:  # noqa: BLE001 - statistics must not break sensors
+        except Exception:  # statistics must not break sensors
             _LOGGER.exception("Could not write statistics")
         return data
 

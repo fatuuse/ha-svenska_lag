@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import ConfigEntryError
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SvenskalagApi
@@ -23,6 +23,7 @@ from .web_client import SvenskalagWebClient
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CALENDAR,
 ]
 
