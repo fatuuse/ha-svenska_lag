@@ -11,10 +11,9 @@
       },
       "credentials": {
         "title": "Logga in med användarnamn och lösenord",
-        "description": "Ange lagsidans adress, till exempel www.exempel.se, och lagets slug från lagets webbadress, till exempel exempel-lag-f2014.",
+        "description": "Ange klubbens sajtadress. Lägg till lag efteråt, under integrationens inställningar.",
         "data": {
           "domain": "Sajtens domän",
-          "team_slug": "Lagets slug",
           "username": "Användarnamn",
           "password": "Lösenord"
         }
@@ -33,6 +32,13 @@
           "token": "Ny personnyckel",
           "password": "Lösenord"
         }
+      },
+      "team": {
+        "title": "Lägg till första laget",
+        "description": "Ange lagets slug från adressen, till exempel ingaroif-innebandy-innebandyp2015. Inloggningen kontrolleras mot laget.",
+        "data": {
+          "team_slug": "Lagets slug"
+        }
       }
     },
     "error": {
@@ -44,29 +50,28 @@
       "reauth_successful": "Autentiseringen lyckades."
     }
   },
-  "entity": {
-    "sensor": {
-      "next_activity": {
-        "name": "Nästa aktivitet"
+  "config_subentries": {
+    "team": {
+      "entry_type": "Lag",
+      "initiate_flow": {
+        "user": "Lägg till lag"
       },
-      "next_training_attendance": {
-        "name": "Anmälda nästa träning"
+      "step": {
+        "user": {
+          "title": "Lägg till lag",
+          "description": "Ange lagets slug från adressen, till exempel ingaroif-innebandy-innebandyp2015.",
+          "data": {
+            "team_slug": "Lagets slug"
+          }
+        }
       },
-      "next_match_attendance": {
-        "name": "Anmälda nästa match"
+      "error": {
+        "invalid_auth": "Inloggningen godkändes inte för det här laget.",
+        "cannot_connect": "Kunde inte nå lagets sajt. Försök igen senare."
       },
-      "upcoming_count": {
-        "name": "Kommande aktiviteter"
-      }
-    },
-    "binary_sensor": {
-      "needs_reply": {
-        "name": "Svar krävs"
-      }
-    },
-    "calendar": {
-      "activities": {
-        "name": "Aktiviteter"
+      "abort": {
+        "already_configured": "Laget är redan tillagt.",
+        "not_supported": "Lag kan bara läggas till för en inloggning med användarnamn och lösenord."
       }
     }
   },
@@ -78,6 +83,53 @@
         "data": {
           "update_hours": "Timmar mellan uppdateringar (standard 12)"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_activity": {
+        "name": "Nästa aktivitet"
+      },
+      "upcoming_count": {
+        "name": "Kommande aktiviteter"
+      },
+      "next_training_attendance": {
+        "name": "Anmälda nästa träning"
+      },
+      "next_match_attendance": {
+        "name": "Anmälda nästa match"
+      },
+      "membership_period_end": {
+        "name": "Medlemsperioden slutar"
+      },
+      "card_valid_until": {
+        "name": "Medlemskortet giltigt till"
+      },
+      "next_training_invited": {
+        "name": "Kallade till nästa träning"
+      },
+      "next_training_not_attending": {
+        "name": "Ej anmälda till nästa träning"
+      },
+      "next_match_invited": {
+        "name": "Kallade till nästa match"
+      },
+      "next_match_not_attending": {
+        "name": "Ej anmälda till nästa match"
+      },
+      "unanswered_invitations": {
+        "name": "Obesvarade kallelser"
+      }
+    },
+    "binary_sensor": {
+      "needs_reply": {
+        "name": "Svar krävs"
+      }
+    },
+    "calendar": {
+      "activities": {
+        "name": "Aktiviteter"
       }
     }
   }
