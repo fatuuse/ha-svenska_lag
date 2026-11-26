@@ -1,7 +1,9 @@
 {
   "domain": "svenskalag",
   "name": "Svenskalag",
-  "codeowners": [@fatuuse],
+  "codeowners": [
+    "@fatuuse"
+  ],
   "config_flow": true,
   "dependencies": [
     "recorder"
